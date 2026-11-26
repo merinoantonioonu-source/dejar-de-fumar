@@ -1,0 +1,11 @@
+{
+  "name": "dejar-de-fumar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PWA para dejar de fumar basada en evidencia científica",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "python3 -m http.server 8080"
+  }
+}

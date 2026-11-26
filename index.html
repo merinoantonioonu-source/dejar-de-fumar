@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dejar de fumar</title>
+  <meta name="description" content="App para dejar de fumar basada en evidencia: hitos de recuperación del cuerpo, mensajes diarios, surfear el deseo (ACT) y planes si-entonces.">
+  <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b1514" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Sin humo">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="brand" aria-label="Inicio"><img src="icons/icon.svg" alt="" width="28" height="28"> Sin humo</a>
+    <nav class="top-actions" aria-label="Secundaria">
+      <a href="#/aprende" aria-label="Aprende" title="Aprende">📚</a>
+      <a href="#/ajustes" aria-label="Ajustes" title="Ajustes">⚙️</a>
+    </nav>
+  </header>
+
+  <main id="app" tabindex="-1">
+    <noscript><p>Esta app necesita JavaScript.</p></noscript>
+  </main>
+
+  <nav id="nav" class="bottomnav" aria-label="Principal" hidden>
+    <a href="#/" data-route=""><span aria-hidden="true">🏠</span>Inicio</a>
+    <a href="#/cuerpo" data-route="cuerpo"><span aria-hidden="true">🫁</span>Cuerpo</a>
+    <a href="#/sos" data-route="sos" class="sos"><span aria-hidden="true">🆘</span>SOS</a>
+    <a href="#/progreso" data-route="progreso"><span aria-hidden="true">📈</span>Progreso</a>
+    <a href="#/plan" data-route="plan"><span aria-hidden="true">🧭</span>Plan</a>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="modal" class="modal" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
