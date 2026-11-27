@@ -1,9 +1,9 @@
 // Service worker: funciona sin conexión y avisa de hitos en segundo plano
 // (sincronización periódica, solo en navegadores que la soportan).
-const VERSION = 'ddf-v1';
+const VERSION = 'ddf-v2';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',
-  './js/app.js', './js/content.js', './js/logic.js', './js/store.js', './js/notify.js',
+  './js/app.js', './js/content.js', './js/logic.js', './js/store.js', './js/notify.js', './js/push.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
 ];
 const SCHEDULE_CACHE = 'ddf-schedule';
@@ -52,6 +52,21 @@ async function checkSchedule() {
 
 self.addEventListener('periodicsync', (e) => {
   if (e.tag === 'ddf-milestones') e.waitUntil(checkSchedule());
+});
+
+// Avisos enviados desde GitHub Actions (llegan aunque la app esté cerrada).
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch { data = { body: e.data?.text() }; }
+  const title = data.title || 'Sin humo';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    tag: data.tag,
+    renotify: !!data.tag,
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    data: { url: data.url || './' },
+  }));
 });
 
 self.addEventListener('notificationclick', (e) => {

@@ -31,7 +31,8 @@ export async function notifyNewMilestones(state, now = Date.now()) {
   if (!state.profile) return [];
   const fresh = milestoneStatus(state.profile.quitAt, now).filter((m) => m.unlocked && !state.notified.includes(m.id));
   if (!fresh.length) return [];
-  if (state.settings.notifications && permission() === 'granted') {
+  // Con los avisos push configurados, GitHub ya envía este hito: evitamos duplicarlo.
+  if (state.settings.notifications && !state.push?.copiedFp && permission() === 'granted') {
     // Si hay muchos de golpe (p. ej. al configurar con una fecha pasada), solo el último.
     const toShow = fresh.length > 2 ? fresh.slice(-1) : fresh;
     for (const m of toShow) {
@@ -46,7 +47,7 @@ export async function syncSchedule(state) {
   if (!('caches' in window) || !state.profile) return;
   try {
     const items = milestoneStatus(state.profile.quitAt).map((m) => ({ id: m.id, at: m.unlockAt.getTime(), title: `${m.icon} ${m.title}`, body: m.body }));
-    const payload = { enabled: !!state.settings.notifications, notified: state.notified, items };
+    const payload = { enabled: !!state.settings.notifications && !state.push?.copiedFp, notified: state.notified, items };
     const cache = await caches.open(SCHEDULE_CACHE);
     await cache.put(SCHEDULE_URL, new Response(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json' } }));
   } catch { /* nada */ }

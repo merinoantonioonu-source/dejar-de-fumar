@@ -1,0 +1,82 @@
+name: Recordatorios
+
+# Envía notificaciones push al móvil aunque la app esté cerrada:
+# hitos del cuerpo, mensaje diario y, de vez en cuando, un perjuicio del tabaco.
+# Requiere el secreto PUSH_CONFIG (se copia desde la app: Ajustes → Avisos con la app cerrada).
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *' # cada 15 minutos (GitHub puede retrasarlo algunos minutos)
+  workflow_dispatch:
+    inputs:
+      prueba:
+        description: 'Enviar solo una notificación de prueba'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: recordatorios
+  cancel-in-progress: false
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PUSH_CONFIG: ${{ secrets.PUSH_CONFIG }}
+    steps:
+      - name: Comprobar configuración
+        id: cfg
+        run: |
+          if [ -z "$PUSH_CONFIG" ]; then
+            echo "Falta el secreto PUSH_CONFIG: activa los avisos en la app y pégalo en Settings → Secrets and variables → Actions."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.skip != 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.skip != 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        if: steps.cfg.outputs.skip != 'true'
+        run: npm ci --no-audit --no-fund
+
+      # El estado (última ejecución y último mensaje enviado) vive en la rama
+      # "avisos-estado" para no ensuciar main. No contiene datos personales.
+      - name: Recuperar estado
+        if: steps.cfg.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin avisos-estado >/dev/null 2>&1; then
+            git fetch --depth=1 origin avisos-estado
+            git worktree add "$RUNNER_TEMP/estado" FETCH_HEAD
+          else
+            git worktree add --detach "$RUNNER_TEMP/estado"
+            git -C "$RUNNER_TEMP/estado" checkout --orphan avisos-estado
+            git -C "$RUNNER_TEMP/estado" rm -rfq .
+          fi
+
+      - name: Enviar notificaciones
+        if: steps.cfg.outputs.skip != 'true'
+        env:
+          STATE_FILE: ${{ runner.temp }}/estado/estado.json
+          TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.prueba }}
+        run: node scripts/send-reminders.mjs
+
+      - name: Guardar estado
+        if: steps.cfg.outputs.skip != 'true'
+        working-directory: ${{ runner.temp }}/estado
+        run: |
+          if [ -f estado.json ] && [ -n "$(git status --porcelain)" ]; then
+            git add estado.json
+            git commit -qm "Actualizar estado de avisos"
+            git push -q origin HEAD:refs/heads/avisos-estado
+          fi
