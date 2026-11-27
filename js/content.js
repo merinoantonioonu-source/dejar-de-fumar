@@ -392,6 +392,58 @@ export const URGE_SURF_SCRIPT = [
 ];
 
 // ---------------------------------------------------------------------------
+// Caja de herramientas del SOS: estrategias para el momento de la tentación.
+// ---------------------------------------------------------------------------
+export const SOS_TOOLS = [
+  { id: 'game', icon: '🧩', title: 'Juego de memoria', sub: '3 minutos de un juego visual reducen la fuerza del antojo', src: ['tetris'] },
+  { id: 'move', icon: '🏃', title: 'Muévete 3 minutos', sub: 'El ejercicio breve baja las ganas hasta 50 min', src: ['exercise', 'haasova'] },
+  { id: 'future', icon: '🎬', title: 'Adelanta la película', sub: 'Mira lo que perderías si fumas ahora', src: [] },
+  { id: 'defuse', icon: '💭', title: 'Desactiva el pensamiento', sub: 'Técnica ACT: un pensamiento no es una orden', src: ['icanquit'] },
+  { id: 'delay', icon: '⏳', title: 'Retrásalo 10 minutos', sub: 'Solo decide no fumar en los próximos 10 minutos', src: [] },
+  { id: 'mouth', icon: '💧', title: 'Boca y manos ocupadas', sub: 'Agua fría, chicle, lavarte los dientes', src: [] },
+  { id: 'call', icon: '📞', title: 'Habla con alguien', sub: 'Pedir apoyo en el momento funciona', src: [] },
+  { id: 'place', icon: '🚪', title: 'Cambia de sitio', sub: 'Sal de la situación que lo ha disparado', src: [] },
+  { id: 'ground', icon: '🖐️', title: '5-4-3-2-1', sub: 'Ancla tu atención a lo que te rodea', src: [] },
+  { id: 'letter', icon: '💌', title: 'Tu carta', sub: 'Lo que tu yo decidido te diría ahora', src: [] },
+  { id: 'nrt', icon: '💊', title: 'Nicotina de acción rápida', sub: 'Chicle, comprimido o espray, si los usas', src: ['cochrane_nrt'], onlyNrt: true },
+];
+
+export const EXERCISE_MOVES = [
+  'Marcha en el sitio levantando bien las rodillas',
+  'Sentadillas lentas (o siéntate y levántate de una silla)',
+  'Sube y baja un escalón, o las escaleras',
+  'Flexiones contra la pared',
+  'Estira los brazos hacia el techo y respira hondo',
+  'Camina rápido, aunque sea por el pasillo',
+];
+
+export const GROUNDING_STEPS = [
+  { n: 5, text: 'Nombra 5 cosas que puedas ver a tu alrededor.' },
+  { n: 4, text: 'Toca 4 cosas y nota su textura (la mesa, tu ropa, el móvil…).' },
+  { n: 3, text: 'Escucha 3 sonidos distintos.' },
+  { n: 2, text: 'Identifica 2 olores (o 2 olores que te gusten y que ahora notarás más sin tabaco).' },
+  { n: 1, text: 'Nota 1 sabor en tu boca. Bebe un sorbo de agua.' },
+];
+
+export const MOUTH_TIPS = [
+  'Bebe un vaso de agua fría a sorbos lentos',
+  'Mastica chicle sin azúcar o un palito de regaliz',
+  'Lávate los dientes: el sabor a menta choca con el del tabaco',
+  'Come algo crujiente: zanahoria, manzana, frutos secos',
+  'Coge algo con las manos: un bolígrafo, una pelota, el móvil para escribir',
+];
+
+export const PLACE_TIPS = [
+  'Levántate y sal de la habitación o del lugar donde estás',
+  'Si estás con gente que fuma, apártate o entra dentro',
+  'Ve a un sitio donde no se pueda fumar (una tienda, el coche de otro, una biblioteca)',
+  'Abre una ventana o sal a respirar aire fresco, lejos de la zona de fumadores',
+];
+
+// Lo que pasa en el cuerpo al volver a fumar (para el aviso tras una recaída).
+export const RELAPSE_BODY = 'El monóxido de carbono vuelve a tu sangre y tu corazón se acelera. La nicotina reactiva los receptores de tu cerebro, por eso las ganas pueden ser más fuertes en las próximas horas: no le des un segundo cigarrillo.';
+
+// ---------------------------------------------------------------------------
 // "Aprende": explicaciones breves.
 // ---------------------------------------------------------------------------
 export const LEARN = [
@@ -447,6 +499,10 @@ export const SOURCES = {
   cochrane_mobile: { label: 'Cochrane (2019) – SMS y apps para dejar de fumar', url: 'https://www.cochrane.org/evidence/CD006611_can-programmes-delivered-mobile-phones-help-people-stop-smoking' },
   icanquit: { label: 'Bricker et al., JAMA Intern Med 2020 – Ensayo iCanQuit (ACT)', url: 'https://pubmed.ncbi.nlm.nih.gov/32955554/' },
   smokefree: { label: 'Crane et al., F1000Research 2019 – Smoke Free (misiones diarias)', url: 'https://f1000research.com/articles/7-1524/v2' },
+  tetris: { label: 'Skorka-Brown et al., Addictive Behaviors 2015 – Un juego visual de 3 min reduce los antojos', url: 'https://doi.org/10.1016/j.addbeh.2015.07.020' },
+  exercise: { label: 'Taylor, Ussher y Faulkner, Addiction 2007 – El ejercicio breve reduce las ganas de fumar', url: 'https://pubmed.ncbi.nlm.nih.gov/17286639/' },
+  haasova: { label: 'Haasova et al., Addiction 2013 – Actividad física y antojos (metaanálisis)', url: 'https://pubmed.ncbi.nlm.nih.gov/22861822/' },
+  cochrane_nrt: { label: 'Cochrane – Terapia sustitutiva de nicotina', url: 'https://doi.org/10.1002/14651858.CD000146.pub5' },
   gollwitzer: { label: 'Gollwitzer y Sheeran, 2006 – Intenciones de implementación', url: 'https://doi.org/10.1016/S0065-2601(06)38002-1' },
   tannenbaum: { label: 'Tannenbaum et al., Psychol Bull 2015 – Eficacia de los mensajes de miedo', url: 'https://doi.org/10.1037/a0039729' },
 };

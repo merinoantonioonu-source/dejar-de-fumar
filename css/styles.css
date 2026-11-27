@@ -301,3 +301,50 @@ input[type="range"] { width: 100%; margin-top: 10px; accent-color: var(--accent)
 code { background: var(--surface-2); padding: 1px 5px; border-radius: 6px; }
 .warn { color: var(--warn-ink); font-weight: 600; }
 .warn-card { background: var(--warn-bg); border-color: var(--warn-border); }
+
+/* Acciones principales: SOS y "He fumado" */
+.action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.action-row .btn { margin: 0; min-height: 56px; font-size: 1.05rem; }
+.btn.smoked {
+  background: var(--warn-bg); color: var(--warn-ink); border: 2px solid var(--warn-ink); font-weight: 800;
+}
+.btn.block.smoked { margin-top: 12px; min-height: 52px; }
+.tiles2 { grid-template-columns: 1fr 1fr; }
+.tiles2 .tile-v { font-size: 1rem; }
+
+/* Pérdidas por recaída */
+.loss { background: var(--warn-bg); border-color: var(--warn-border); }
+.loss .eyebrow { color: var(--warn-ink); }
+.loss-list { list-style: none; padding: 0; margin: 8px 0; text-align: left; }
+.loss-list li { padding: 7px 0; border-bottom: 1px dashed var(--warn-border); }
+.loss-list li:last-child { border-bottom: 0; }
+.modal-card .loss-list { font-size: .95rem; }
+.modal-card { max-height: calc(100vh - 32px); overflow-y: auto; }
+.encourage { background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); border-radius: 12px; padding: 10px 12px; text-align: left; }
+
+/* Caja de herramientas del SOS */
+.trig summary { cursor: pointer; }
+.tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tool {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font: inherit; cursor: pointer; min-height: 96px;
+}
+.tool .tool-icon { font-size: 1.5rem; }
+.tool b { font-size: .92rem; line-height: 1.2; }
+.tool small { color: var(--muted); font-size: .74rem; line-height: 1.25; }
+.tool.used { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.tool.on { border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface)); }
+.tool-panel { border: 2px solid var(--accent); scroll-margin-top: 70px; }
+.memory { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 260px; margin: 12px auto; }
+.mem-cell { aspect-ratio: 1; border-radius: 14px; border: 2px solid var(--border); background: var(--surface-2); cursor: pointer; transition: background .15s; }
+.mem-cell.lit { background: var(--accent); border-color: var(--accent); }
+.mem-cell.ok { background: var(--ok); }
+.mem-cell.bad { background: var(--sos); }
+.move-now { font-size: 1.2rem; font-weight: 700; text-align: center; min-height: 3em; margin-top: 10px; }
+.ground-n { font-size: 3rem; font-weight: 800; text-align: center; margin: 0; color: var(--accent); }
+.ground-text { font-size: 1.15rem; text-align: center; }
+.defuse p { margin: 8px 0; }
+.defuse p:nth-child(2) { padding-left: 10px; }
+.defuse p:nth-child(3) { padding-left: 20px; }
+.letter { margin: 8px 0; padding: 10px 14px; border-left: 4px solid var(--accent); background: var(--surface-2); border-radius: 8px; font-size: 1.05rem; white-space: pre-wrap; }

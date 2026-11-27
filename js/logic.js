@@ -255,3 +255,44 @@ export function buildICS(profile, now = Date.now(), { appUrl = '', dailyHour = 9
   );
   return lines.join('\r\n') + '\r\n';
 }
+
+/**
+ * Lo que se pierde al volver a fumar: se usa para el aviso tras una recaída
+ * y, en el SOS, para "adelantar la película" antes de fumar.
+ */
+export function relapseCost(profile, count = 1, now = Date.now()) {
+  const st = milestoneStatus(profile.quitAt, now);
+  return {
+    streakMs: Math.max(0, elapsedMs(profile.quitAt, now)),
+    lostMilestones: st.filter((m) => m.unlocked),
+    nextMilestone: st.find((m) => !m.unlocked) || null,
+    avoided: cigarettesAvoided(profile, now),
+    money: moneySaved(profile, now),
+    lifeRegained: lifeRegainedMinutes(profile, now),
+    smokedCost: count * pricePerCigarette(profile),
+    lifeLost: count * MINUTES_PER_CIGARETTE,
+  };
+}
+
+/** Racha más larga: los intentos anteriores (resets) y el actual. */
+export function bestStreakMs(resets = [], quitAt, now = Date.now()) {
+  const past = resets.map((r) => toMs(r.at) - toMs(r.previousQuitAt));
+  return Math.max(0, elapsedMs(quitAt, now), ...past);
+}
+
+/** Qué estrategias del SOS se han usado y cuánto bajó el deseo de media con ellas. */
+export function strategyStats(logs) {
+  const acc = {};
+  for (const l of logs) {
+    if (l.type !== 'craving' || !l.strategies?.length || typeof l.intensityAfter !== 'number') continue;
+    for (const id of l.strategies) {
+      acc[id] ??= { id, count: 0, drop: 0, resisted: 0 };
+      acc[id].count++;
+      acc[id].drop += l.intensity - l.intensityAfter;
+      if (l.resisted) acc[id].resisted++;
+    }
+  }
+  return Object.values(acc)
+    .map((a) => ({ id: a.id, count: a.count, resisted: a.resisted, avgDrop: a.drop / a.count }))
+    .sort((a, b) => b.avgDrop - a.avgDrop || b.count - a.count);
+}
