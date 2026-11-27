@@ -286,3 +286,18 @@ input[type="range"] { width: 100%; margin-top: 10px; accent-color: var(--accent)
 @media (min-width: 600px) {
   .hero .big { font-size: 2.5rem; }
 }
+
+/* Asistente de avisos push */
+.steps-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 12px; }
+.steps-list li { display: flex; gap: 10px; align-items: flex-start; }
+.steps-list .num {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-2); font-weight: 700; font-size: .9rem;
+}
+.steps-list li.done .num { background: var(--accent); color: var(--accent-ink); }
+.steps-list .btn { margin-top: 6px; }
+.steps-list textarea { font-family: ui-monospace, monospace; font-size: .75rem; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+code { background: var(--surface-2); padding: 1px 5px; border-radius: 6px; }
+.warn { color: var(--warn-ink); font-weight: 600; }
+.warn-card { background: var(--warn-bg); border-color: var(--warn-border); }

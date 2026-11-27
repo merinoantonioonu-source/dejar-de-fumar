@@ -8,6 +8,7 @@ import {
 } from './logic.js';
 import * as store from './store.js';
 import * as notify from './notify.js';
+import * as push from './push.js';
 
 // ---------------------------------------------------------------------------
 // Estado
@@ -314,7 +315,7 @@ function viewHome() {
     const totalCigs = state.logs.filter((l) => l.type === 'cigarette').length;
     const tops = topTriggers(state.logs.filter((l) => l.type === 'cigarette'));
     const done = PREP_CHECKLIST.filter((c) => state.checklist[c.id]).length;
-    return `
+    return `${pushOutdatedBanner()}
       <section class="hero prep">
         <div class="eyebrow">Fase de preparación</div>
         <div class="big" data-live="countdown">${formatDuration(left)}</div>
@@ -343,7 +344,7 @@ function viewHome() {
   const status = milestoneStatus(p.quitAt);
   const recent = status.filter((m) => m.unlocked && now() - m.unlockAt.getTime() < DAY).pop();
   const lapses = state.logs.filter((l) => l.type === 'lapse' && new Date(l.at) >= new Date(p.quitAt)).length;
-  return `
+  return `${pushOutdatedBanner()}
     <section class="hero">
       <div class="eyebrow">${p.name ? `${esc(p.name)}, llevas` : 'Llevas'} sin fumar</div>
       <div class="big" data-live="elapsed">${formatDuration(ms, { parts: 3 })}</div>
@@ -740,11 +741,11 @@ function viewSettings() {
         ? '<button class="btn primary block" data-action="install">Instalar app</button>'
         : `<p class="small">${isIOS ? 'En Safari toca <b>Compartir</b> → <b>Añadir a pantalla de inicio</b>.' : 'En Chrome toca el menú <b>⋮</b> → <b>Instalar aplicación</b> o <b>Añadir a pantalla de inicio</b>.'}</p>`}
     </section>
-    <section class="card"><div class="eyebrow">🔔 Avisos de hitos</div>
-      <label class="switch"><input type="checkbox" data-action="toggle-notif" ${s.notifications && perm === 'granted' ? 'checked' : ''}> <span>Notificarme cada nuevo cambio en mi cuerpo</span></label>
-      <p class="muted small">Estado: ${permText}. ${isIOS ? 'En iPhone, las notificaciones solo funcionan con la app añadida a la pantalla de inicio (iOS 16.4 o posterior).' : ''} Sin servidor, el navegador solo puede avisar al abrir la app (y en algunos Android, en segundo plano). Para avisos puntuales garantizados, añade los hitos a tu calendario:</p>
-      <label class="field">Hora del recordatorio diario
+    ${pushCard(isIOS, standalone)}
+    <section class="card"><div class="eyebrow">⏰ Mensaje diario</div>
+      <label class="field">Hora del mensaje diario
         <select data-action="daily-hour">${Array.from({ length: 15 }, (_, i) => i + 7).map((h) => `<option value="${h}" ${s.dailyHour === h ? 'selected' : ''}>${h}:00</option>`).join('')}</select></label>
+      <p class="muted small">Alternativa sin configurar nada: añade los hitos a tu calendario y sus alarmas te avisarán. Estado de los permisos de notificación: ${permText}.</p>
       <button class="btn block" data-action="ics">📅 Añadir hitos y recordatorio diario al calendario</button>
     </section>
     <section class="card"><div class="eyebrow">⚠️ Recordatorios de perjuicios del tabaco</div>
@@ -782,6 +783,43 @@ function viewSettings() {
       <a href="#/aprende">Ver todas las fuentes</a>
     </section>
     <p class="muted tiny">Esta app es una herramienta de apoyo y no sustituye el consejo de un profesional sanitario.</p>`;
+}
+
+function pushOutdated() {
+  return !!(state.push?.copiedFp && state.push.copiedFp !== push.fingerprint(state));
+}
+
+function pushOutdatedBanner() {
+  if (!pushOutdated()) return '';
+  return `<a class="card warn-card" href="#/ajustes">🔔 <b>Actualiza tus avisos</b><br><span class="small">Has cambiado datos que usan los avisos (por ejemplo, tu fecha). Vuelve a copiar la configuración y actualiza el secreto en GitHub.</span></a>`;
+}
+
+function pushCard(isIOS, standalone) {
+  const { secretsUrl, actionsUrl } = push.repoInfo();
+  const head = '<div class="eyebrow">🔔 Avisos con la app cerrada</div>';
+  if (!push.pushSupported() || (isIOS && !standalone)) {
+    return `<section class="card">${head}
+      <p class="small">${isIOS ? 'En iPhone primero añade la app a la pantalla de inicio (Compartir → Añadir a pantalla de inicio), ábrela desde allí y vuelve a esta pantalla. Necesitas iOS 16.4 o posterior.' : 'Este navegador no admite notificaciones push. Prueba con Chrome, Edge o Firefox, o usa el calendario.'}</p></section>`;
+  }
+  const p = state.push || {};
+  const ready = !!p.subscription;
+  const copied = !!p.copiedFp;
+  const step = (n, done, html) => `<li class="${done ? 'done' : ''}"><span class="num">${done ? '✓' : n}</span><div>${html}</div></li>`;
+  return `<section class="card">${head}
+    <p class="small muted">Para recibir tus hitos, el mensaje diario y los recordatorios <b>sin abrir la app</b>, tu repositorio de GitHub te los envía cada 15 minutos. Se configura una vez:</p>
+    ${pushOutdated() ? '<p class="warn small">⚠️ Has cambiado datos desde la última vez: repite los pasos 2 y 3.</p>' : ''}
+    <ol class="steps-list">
+      ${step(1, ready, `<b>Activa los avisos en este móvil</b><br>${ready ? '<span class="small ok">Activados</span>' : '<button class="btn primary small" data-action="push-enable">Activar</button>'}`)}
+      ${step(2, copied && !pushOutdated(), `<b>Copia tu configuración</b><br><span class="small muted">Contiene la "dirección" de tu móvil y lo necesario para redactar tus mensajes. Trátala como una contraseña.</span><br>
+        <button class="btn small" data-action="push-copy" ${ready ? '' : 'disabled'}>📋 Copiar configuración</button>
+        <div id="push-json"></div>`)}
+      ${step(3, copied && !pushOutdated(), `<b>Pégala como secreto en GitHub</b><br><span class="small">Nombre: <code>PUSH_CONFIG</code> · Valor: lo copiado. Si ya existe, edítalo y sustitúyelo.</span><br>
+        ${secretsUrl ? `<a class="btn small" href="${secretsUrl}" target="_blank" rel="noopener">Abrir los secretos del repositorio</a>` : '<span class="small muted">Repositorio → Settings → Secrets and variables → Actions → New repository secret.</span>'}`)}
+      ${step(4, false, `<b>Prueba</b><br><span class="small">En GitHub: Actions → Recordatorios → <i>Run workflow</i>. Te llegará "🔔 Los avisos funcionan".</span><br>
+        ${actionsUrl ? `<a class="btn small" href="${actionsUrl}" target="_blank" rel="noopener">Abrir Recordatorios</a>` : ''}`)}
+    </ol>
+    <p class="muted tiny">Si desinstalas la app, borras los datos del navegador o tras un desliz reinicias la fecha, repite los pasos 2 y 3. GitHub puede retrasar los envíos unos minutos.</p>
+  </section>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -873,6 +911,36 @@ document.addEventListener('click', async (e) => {
         if (r === 'granted') { notify.registerPeriodicSync(); toast('🔔 Te avisaré de cada nuevo cambio en tu cuerpo'); } else toast('No se ha concedido el permiso de notificaciones');
       } else state.settings.notifications = false;
       commit(); break;
+    }
+    case 'push-enable': {
+      try {
+        el.disabled = true;
+        const vapid = await push.ensureVapid(state.push?.vapid);
+        const subscription = await push.subscribe(vapid);
+        state.push = { ...(state.push || {}), vapid, subscription };
+        state.settings.notifications = true;
+        commit(); toast('Avisos activados en este móvil. Ahora copia la configuración.');
+      } catch (err) {
+        el.disabled = false;
+        toast(`No se pudieron activar los avisos: ${err.message || 'error desconocido'}`);
+      }
+      break;
+    }
+    case 'push-copy': {
+      const cfg = JSON.stringify(push.buildConfig(state, state.push.vapid, state.push.subscription));
+      let ok = false;
+      try { await navigator.clipboard.writeText(cfg); ok = true; } catch { /* sin portapapeles */ }
+      state.push.copiedFp = push.fingerprint(state);
+      commit();
+      if (ok) toast('Configuración copiada. Pégala en GitHub como PUSH_CONFIG.');
+      else {
+        const box = document.getElementById('push-json');
+        if (box) {
+          box.innerHTML = `<p class="small">Selecciona todo el texto y cópialo:</p><textarea readonly rows="5">${esc(cfg)}</textarea>`;
+          box.querySelector('textarea').select();
+        }
+      }
+      break;
     }
     case 'ics': {
       const ics = buildICS(state.profile, now(), { appUrl: location.href.split('#')[0], dailyHour: state.settings.dailyHour });

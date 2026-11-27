@@ -33,21 +33,40 @@ Todas las fuentes están dentro de la app, en **📚 Aprende → Fuentes cientí
 3. Instálala:
    - **Android (Chrome):** menú ⋮ → *Instalar aplicación*.
    - **iPhone (Safari):** Compartir → *Añadir a pantalla de inicio*.
-4. En ⚙️ Ajustes:
-   - activa los avisos de hitos;
-   - toca **"Añadir hitos al calendario"** para recibir alarmas aunque no abras la app.
+4. Activa los **avisos con la app cerrada** (ver abajo).
 
-### Sobre las notificaciones
+## Avisos con la app cerrada (push)
 
-Sin servidor, el navegador avisa de los nuevos hitos al abrir la app. En Android con la app instalada también puede hacerlo en segundo plano, mediante sincronización periódica. En iPhone las notificaciones requieren iOS 16.4 o posterior y tener la app añadida a la pantalla de inicio. El archivo de calendario es la vía garantizada en cualquier móvil.
+Una web cerrada no puede ejecutar nada por sí misma. Por eso los avisos los envía **tu propio repositorio**: un workflow de GitHub Actions ([`recordatorios.yml`](.github/workflows/recordatorios.yml)) se ejecuta cada 15 minutos y manda notificaciones push al móvil:
+
+- 🫁 **cada nuevo cambio en tu cuerpo**, en el momento en que se alcanza;
+- 💬 **el mensaje del día**, a la hora que elijas, con los días sin fumar y el dinero ahorrado (y el recordatorio de la medicación si la usas);
+- ⚠️ **un perjuicio del tabaco**, a las 18:00, con la frecuencia elegida (siempre con lo que ganas al dejarlo).
+
+Configuración (una sola vez), desde la app en ⚙️ Ajustes → *Avisos con la app cerrada*:
+
+1. **Activar**: el móvil pide permiso para notificaciones y genera sus propias claves.
+2. **Copiar configuración**: copia un JSON con la suscripción del móvil y los datos necesarios para redactar los mensajes.
+3. En GitHub: **Settings → Secrets and variables → Actions → New repository secret**, con nombre `PUSH_CONFIG` y como valor lo copiado.
+4. Prueba: **Actions → Recordatorios → Run workflow**. Debe llegarte "🔔 Los avisos funcionan".
+
+Notas:
+
+- **iPhone**: requiere iOS 16.4 o posterior y abrir la app desde la pantalla de inicio antes del paso 1.
+- **Cuándo repetir los pasos 2 y 3**: si cambias datos que usan los mensajes (por ejemplo, la fecha tras un desliz, tus motivos o la hora del mensaje). La app te lo recuerda con un aviso en la pantalla de inicio.
+- **Puntualidad**: GitHub puede retrasar las ejecuciones programadas unos minutos. Los envíos no se pierden, se mandan en la siguiente ejecución.
+- **Estado**: se guarda en la rama `avisos-estado` y solo contiene horas de envío, sin datos personales. Los datos personales están únicamente en el secreto `PUSH_CONFIG`, que GitHub cifra y nadie más puede ver.
+- **Workflow desactivado**: GitHub desactiva los workflows programados de repos públicos tras 60 días sin actividad. Los envíos diarios guardan estado y cuentan como actividad. Si aun así se desactivara, GitHub te avisa por correo y se reactiva en Actions → Recordatorios → *Enable workflow*.
+- **Calendario**: sigue disponible como alternativa sin configuración (⚙️ Ajustes → *Añadir hitos al calendario*).
 
 ## Desarrollo
 
-Es JavaScript sin dependencias ni paso de compilación.
+La app es JavaScript sin dependencias ni paso de compilación. Solo el envío de avisos usa `web-push` (en GitHub Actions).
 
 ```bash
 npm start   # servidor local en http://localhost:8080
-npm test    # pruebas de la lógica (node --test)
+npm install # solo para las pruebas del envío de avisos
+npm test    # pruebas (node --test)
 ```
 
 Estructura:
@@ -59,4 +78,7 @@ Estructura:
 - `js/app.js`: interfaz y pantallas
 - `js/store.js`: guardado local, exportar e importar copias
 - `js/notify.js`: notificaciones
-- `sw.js`: service worker (uso sin conexión y avisos en segundo plano)
+- `js/push.js`: alta de avisos push (claves VAPID y suscripción)
+- `js/reminders.js`: qué avisos enviar en cada ejecución (probado)
+- `scripts/send-reminders.mjs`: envío desde GitHub Actions
+- `sw.js`: service worker (uso sin conexión y muestra de los avisos push)
