@@ -1,10 +1,11 @@
 import {
   BODY_MILESTONES, HARMS, TRIGGERS, MOTIVES, MOODS, MEDICATIONS, PREP_CHECKLIST, URGE_SURF_SCRIPT, LEARN, SOURCES,
+  SOS_TOOLS, EXERCISE_MOVES, GROUNDING_STEPS, MOUTH_TIPS, PLACE_TIPS, RELAPSE_BODY,
 } from './content.js';
 import {
   DAY, MIN, elapsedMs, dayIndex, cigarettesAvoided, moneySaved, lifeRegainedMinutes, milestoneStatus, nextMilestone,
   formatDuration, formatLife, formatMoney, formatNumber, dailyMessage, showHarmToday, harmOfDay, harmFor,
-  cravingsByDay, topTriggers, buildICS, yearlyCost,
+  cravingsByDay, topTriggers, buildICS, yearlyCost, relapseCost, bestStreakMs, strategyStats,
 } from './logic.js';
 import * as store from './store.js';
 import * as notify from './notify.js';
@@ -39,8 +40,8 @@ function toast(msg) {
   toast._t = setTimeout(() => $toast.classList.remove('show'), 3200);
 }
 
-function showModal(html) {
-  $modal.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true">${html}<button class="btn primary block" data-action="close-modal">Seguir</button></div>`;
+function showModal(html, button = 'Seguir') {
+  $modal.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true">${html}<button class="btn primary block" data-action="close-modal">${esc(button)}</button></div>`;
   $modal.hidden = false;
   $modal.querySelector('button')?.focus();
 }
@@ -343,13 +344,15 @@ function viewHome() {
   const next = nextMilestone(p.quitAt);
   const status = milestoneStatus(p.quitAt);
   const recent = status.filter((m) => m.unlocked && now() - m.unlockAt.getTime() < DAY).pop();
-  const lapses = state.logs.filter((l) => l.type === 'lapse' && new Date(l.at) >= new Date(p.quitAt)).length;
   return `${pushOutdatedBanner()}
     <section class="hero">
       <div class="eyebrow">${p.name ? `${esc(p.name)}, llevas` : 'Llevas'} sin fumar</div>
       <div class="big" data-live="elapsed">${formatDuration(ms, { parts: 3 })}</div>
-      ${lapses ? `<div class="small">con ${lapses} desliz${lapses > 1 ? 'es' : ''} superado${lapses > 1 ? 's' : ''}</div>` : ''}
     </section>
+    <div class="action-row">
+      <a class="btn sos-big" href="#/sos">🆘 Tengo ganas</a>
+      <a class="btn smoked" href="#/desliz">🚬 He fumado</a>
+    </div>
     <div class="tiles">
       <div class="tile"><div class="tile-v" data-live="avoided">${formatNumber(cigarettesAvoided(p))}</div><div class="tile-l">cigarrillos evitados</div></div>
       <div class="tile"><div class="tile-v" data-live="money">${formatMoney(moneySaved(p))}</div><div class="tile-l">ahorrados</div></div>
@@ -372,8 +375,10 @@ function viewHome() {
     ${showHarmToday(msg.day, harmFreq) ? harmCard(harmOfDay(p, now(), harmFreq)) : ''}
     ${medCard()}
     ${rewardCard()}
-    <a class="btn sos-big block" href="#/sos">🆘 Tengo ganas de fumar</a>
-    <p class="center"><a class="link-muted" href="#/desliz">He fumado</a></p>
+    <div class="action-row">
+      <a class="btn sos-big" href="#/sos">🆘 Tengo ganas</a>
+      <a class="btn smoked" href="#/desliz">🚬 He fumado</a>
+    </div>
     <p class="muted tiny">* Estimación media de ~20 minutos de vida por cigarrillo (UCL, 2025).</p>`;
 }
 
@@ -416,21 +421,141 @@ function viewBody() {
 }
 
 // ---------------------------------------------------------------------------
-// SOS: surfear el deseo
+// SOS: surfear el deseo y caja de herramientas para el momento de debilidad
 // ---------------------------------------------------------------------------
 const SURF_SECONDS = 180;
-const sos = { step: 0, intensity: 7, after: 4, trigger: '', start: 0, timer: null, breath: null };
+const sos = {
+  step: 0, intensity: 7, after: 4, trigger: '', start: 0, timer: null, breath: null,
+  tool: '', toolTimer: null, used: new Set(), groundIdx: 0, defuse: '', mouth: new Set(),
+  game: { level: 1, seq: [], input: 0, busy: false, started: 0 },
+};
+
+function stopTool() { clearInterval(sos.toolTimer); sos.toolTimer = null; }
 
 function stopSOS() {
-  clearInterval(sos.timer); clearTimeout(sos.breath);
+  clearInterval(sos.timer); clearTimeout(sos.breath); stopTool();
   sos.timer = null; sos.breath = null;
 }
 
-function resetSOS() { stopSOS(); Object.assign(sos, { step: 0, intensity: 7, after: 4, trigger: '', start: 0 }); }
+function resetSOS() {
+  stopSOS();
+  Object.assign(sos, {
+    step: 0, intensity: 7, after: 4, trigger: '', start: 0, tool: '', used: new Set(), groundIdx: 0, defuse: '', mouth: new Set(),
+    game: { level: 1, seq: [], input: 0, busy: false, started: 0 },
+  });
+}
+
+const fmtClock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const usesNrt = () => ['nrt', 'nrt-combo'].includes(state.profile?.medication);
+const availableTools = () => SOS_TOOLS.filter((t) => !t.onlyNrt || usesNrt());
+
+/** Tarjeta "lo que perderías / has perdido" al fumar. */
+function lossListHTML(cost, { past = false } = {}) {
+  const p = state.profile;
+  const lost = cost.lostMilestones;
+  const items = [];
+  if (cost.streakMs >= MIN) items.push(`⏱️ <b>${formatDuration(cost.streakMs, { parts: 2 })}</b> de racha sin fumar ${past ? 'vuelven' : 'volverían'} a cero`);
+  if (lost.length) items.push(`🫁 <b>${lost.length} cambio${lost.length > 1 ? 's' : ''} de tu cuerpo</b> ${past ? 'vuelven' : 'volverían'} a empezar: ${lost.slice(-2).map((m) => `«${esc(m.title)}»`).join(', ')}${lost.length > 2 ? '…' : ''}`);
+  if (cost.nextMilestone) items.push(`⏳ ${past ? 'Estabas' : 'Estás'} a <b>${formatDuration(cost.nextMilestone.remainingMs)}</b> de «${esc(cost.nextMilestone.title)}»`);
+  if (cost.money >= 0.01) items.push(`💶 <b>${formatMoney(cost.money)}</b> ${past ? 'salen' : 'saldrían'} de tu contador de ahorro${p.reward?.name ? ` y de tu recompensa («${esc(p.reward.name)}»)` : ''}`);
+  if (cost.avoided) items.push(`🚬 <b>${formatNumber(cost.avoided)}</b> cigarrillos evitados ${past ? 'vuelven' : 'volverían'} a cero`);
+  items.push(`❤️ <b>${formatLife(cost.lifeLost)}</b> menos de esperanza de vida (≈20 min por cigarrillo)${cost.smokedCost >= 0.01 ? ` y <b>${formatMoney(cost.smokedCost)}</b> quemados` : ''}`);
+  return `<ul class="loss-list">${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+}
+
+function toolPanel(id) {
+  const p = state.profile;
+  const tool = SOS_TOOLS.find((t) => t.id === id);
+  if (!tool) return '';
+  const head = `<div class="eyebrow">${tool.icon} ${esc(tool.title)}</div>`;
+  let body = '';
+  switch (id) {
+    case 'game':
+      body = `<p class="small">Memoriza las casillas que se iluminan y tócalas en el mismo orden. Jugar unos 3 minutos ocupa la "pantalla mental" donde se forma la imagen del cigarrillo.</p>
+        <div class="memory" role="group" aria-label="Juego de memoria">${Array.from({ length: 9 }, (_, i) => `<button type="button" class="mem-cell" data-action="mem-tap" data-i="${i}" aria-label="Casilla ${i + 1}"></button>`).join('')}</div>
+        <p class="center"><b id="mem-status">Nivel ${sos.game.level}</b> · <span id="mem-time" class="muted">0:00</span></p>
+        <button class="btn primary block" data-action="mem-start">Empezar</button>`;
+      break;
+    case 'move':
+      body = `<p class="small">Unos minutos de actividad reducen las ganas de fumar y el efecto dura hasta 50 minutos. No hace falta sudar.</p>
+        <p class="move-now" id="move-now">${esc(EXERCISE_MOVES[0])}</p>
+        <p class="surf-timer center" id="move-timer">3:00</p>
+        <button class="btn primary block" data-action="move-start">Empezar 3 minutos</button>`;
+      break;
+    case 'future':
+      body = isQuit()
+        ? `<p class="small">Imagina que fumas ahora. El alivio dura unos minutos. Después:</p>${lossListHTML(relapseCost(p, 1))}
+           <p class="small">Y mañana te despertarías con ganas otra vez, pero con el contador a cero. <b>¿Merece la pena?</b></p>`
+        : harmCard(harmFor(p, Math.floor(Math.random() * HARMS.length)), 'Si fumas');
+      break;
+    case 'defuse':
+      body = `<label class="field">¿Qué te está diciendo tu mente ahora mismo?
+          <input id="defuse-in" value="${esc(sos.defuse)}" placeholder="Necesito un cigarrillo / Solo uno no pasa nada"></label>
+        <button class="btn block" data-action="defuse-go">Transformar el pensamiento</button>
+        <div id="defuse-out">${sos.defuse ? defuseHTML(sos.defuse) : ''}</div>`;
+      break;
+    case 'delay':
+      body = `<p class="small">No tienes que decidir "nunca más". Solo esto: <b>no fumar en los próximos 10 minutos</b>. Cuando acaben, casi siempre las ganas habrán bajado.</p>
+        <p class="surf-timer center" id="delay-timer">10:00</p>
+        <button class="btn primary block" data-action="delay-start">Empezar los 10 minutos</button>`;
+      break;
+    case 'mouth':
+      body = `<p class="small">Gran parte del hábito está en la boca y las manos. Haz al menos una:</p>
+        <div class="chips">${MOUTH_TIPS.map((t, i) => `<button type="button" class="chip ${sos.mouth.has(i) ? 'on' : ''}" data-action="mouth-check" data-i="${i}" aria-pressed="${sos.mouth.has(i)}">${esc(t)}</button>`).join('')}</div>`;
+      break;
+    case 'call': {
+      const who = p.supportPerson || 'tu persona de apoyo';
+      const msg = `Tengo muchas ganas de fumar ahora mismo. ¿Puedes hablar conmigo 5 minutos?`;
+      const phone = (p.supportPhone || '').replace(/[^\d+]/g, '');
+      body = `<p class="small">Escribir o llamar a alguien en el momento de la tentación corta el impulso. No hace falta explicar mucho.</p>
+        ${phone ? `<a class="btn primary block" href="tel:${esc(phone)}">📞 Llamar a ${esc(who)}</a>
+          <a class="btn block" href="https://wa.me/${esc(phone.replace(/^\+/, '').replace(/^(\d{9})$/, '34$1'))}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">💬 WhatsApp</a>
+          <a class="btn block" href="sms:${esc(phone)}?body=${encodeURIComponent(msg)}">✉️ SMS</a>`
+        : `<button class="btn primary block" data-action="share-support" data-msg="${esc(msg)}">💬 Enviar mensaje a alguien</button>
+          <p class="small muted">Añade el teléfono de ${esc(who)} en <a href="#/plan">Plan</a> para llamar con un toque.</p>`}`;
+      break;
+    }
+    case 'place':
+      body = `<p class="small">El lugar, la gente y la rutina disparan las ganas. Cambiar de escenario las debilita:</p>
+        <ul>${PLACE_TIPS.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+      break;
+    case 'ground': {
+      const st = GROUNDING_STEPS[sos.groundIdx];
+      body = st
+        ? `<p class="ground-n">${st.n}</p><p class="ground-text">${esc(st.text)}</p>
+           <button class="btn primary block" data-action="ground-next">Hecho</button>`
+        : '<p class="ok">Has vuelto al presente. ¿Cómo están ahora las ganas?</p>';
+      break;
+    }
+    case 'letter':
+      body = p.letter
+        ? `<blockquote class="letter">${esc(p.letter)}</blockquote><p class="small muted">Lo escribiste tú, en un momento de fuerza.</p>`
+        : `<p class="small">Escribe ahora, con tus palabras, por qué no vas a fumar este cigarrillo. La próxima vez lo verás aquí.</p>
+           <textarea id="letter-in" rows="4" placeholder="Querido/a yo: ahora mismo tienes ganas, pero…"></textarea>
+           <button class="btn block" data-action="letter-save">Guardar mi carta</button>`;
+      break;
+    case 'nrt':
+      body = `<p class="small">Si tienes chicle, comprimido o espray de nicotina, úsalo ahora según las instrucciones: actúa en pocos minutos y es mucho menos dañino que un cigarrillo. Combinarlo con el parche es la forma más eficaz.</p>`;
+      break;
+    default: break;
+  }
+  return `<section class="card tool-panel" id="tool-panel">${head}${body}${srcLinks(tool.src)}</section>`;
+}
+
+function defuseHTML(text) {
+  const t = esc(text.trim().replace(/^["«]|["»]$/g, ''));
+  return `<div class="defuse">
+    <p>«${t}»</p>
+    <p>Estoy teniendo el pensamiento de que «${t}».</p>
+    <p>Me doy cuenta de que estoy teniendo el pensamiento de que «${t}».</p>
+    <p class="ok">Gracias, mente. Es solo un pensamiento: no tengo que obedecerlo.</p>
+    <p class="small muted">Prueba a repetirlo mentalmente con voz de dibujo animado o cantándolo: verás cómo pierde fuerza.</p>
+  </div>`;
+}
 
 function viewSOS() {
   const p = state.profile;
-  const steps = ['Puntúa', 'Surfea', 'Plan', 'Recuerda', 'Resultado'];
+  const steps = ['Puntúa', 'Surfea', 'Actúa', 'Recuerda', 'Resultado'];
   const head = `<div class="sos-steps">${steps.map((s, i) => `<span class="${i === sos.step ? 'on' : i < sos.step ? 'done' : ''}">${s}</span>`).join('')}</div>`;
   if (sos.step === 0) {
     return `${head}
@@ -439,7 +564,8 @@ function viewSOS() {
       <label class="field">¿Cómo de fuerte es ahora? <b id="int-v">${sos.intensity}</b>/10
         <input type="range" min="1" max="10" value="${sos.intensity}" data-range="intensity" aria-label="Intensidad del deseo">
       </label>
-      <button class="btn primary block" data-action="sos-next">Empezar a surfear (3 min)</button>`;
+      <button class="btn primary block" data-action="sos-next">Empezar a surfear (3 min)</button>
+      <button class="btn block" data-action="sos-goto" data-step="2">Ir directo a las estrategias</button>`;
   }
   if (sos.step === 1) {
     return `${head}
@@ -448,7 +574,7 @@ function viewSOS() {
         <div class="surf-timer" id="surf-timer" aria-live="off">3:00</div>
         <p class="surf-text" id="surf-text" aria-live="polite">${esc(URGE_SURF_SCRIPT[0])}</p>
       </div>
-      <button class="btn primary block" data-action="sos-next">Ya ha bajado, seguir</button>`;
+      <button class="btn primary block" data-action="sos-next">Seguir: más estrategias</button>`;
   }
   if (sos.step === 2) {
     const mine = p.triggers || [];
@@ -456,13 +582,20 @@ function viewSOS() {
     const t = sos.trigger && triggerById(sos.trigger);
     const plan = t && p.plans?.[t.id];
     return `${head}
-      <h1>¿Qué lo ha provocado?</h1>
-      <div class="chips">${ordered.map((x) => `<button type="button" class="chip ${sos.trigger === x.id ? 'on' : ''}" data-action="sos-trigger" data-value="${x.id}" aria-pressed="${sos.trigger === x.id}">${x.icon} ${esc(x.label)}</button>`).join('')}</div>
-      ${t ? `<section class="card plan-card">
-        <div class="plan-if">Si estoy <b>${esc(t.label.toLowerCase())}</b>, entonces…</div>
-        ${plan ? `<p class="plan-then">${esc(plan)}</p>` : `<p class="muted small">Aún no tienes plan para este momento. Ideas:</p><ul>${t.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-          <button class="btn small" data-action="sos-save-plan" data-value="${esc(t.tips[0])}">Guardar "${esc(t.tips[0])}" como mi plan</button>`}
-      </section>` : ''}
+      <h1>Actúa ahora</h1>
+      <details class="card trig" ${sos.trigger ? 'open' : ''}><summary><b>¿Qué lo ha provocado?</b> ${t ? `${t.icon} ${esc(t.label)}` : '<span class="muted small">(opcional)</span>'}</summary>
+        <div class="chips">${ordered.map((x) => `<button type="button" class="chip ${sos.trigger === x.id ? 'on' : ''}" data-action="sos-trigger" data-value="${x.id}" aria-pressed="${sos.trigger === x.id}">${x.icon} ${esc(x.label)}</button>`).join('')}</div>
+        ${t ? `<div class="plan-card">
+          <div class="plan-if">Si estoy <b>${esc(t.label.toLowerCase())}</b>, entonces…</div>
+          ${plan ? `<p class="plan-then">${esc(plan)}</p>` : `<p class="muted small">Aún no tienes plan para este momento. Ideas:</p><ul>${t.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+            <button class="btn small" data-action="sos-save-plan" data-value="${esc(t.tips[0])}">Guardar "${esc(t.tips[0])}" como mi plan</button>`}
+        </div>` : ''}
+      </details>
+      <p class="lead">Elige una estrategia (puedes usar varias):</p>
+      <div class="tools">${availableTools().map((x) => `
+        <button type="button" class="tool ${sos.tool === x.id ? 'on' : ''} ${sos.used.has(x.id) ? 'used' : ''}" data-action="sos-tool" data-value="${x.id}" aria-pressed="${sos.tool === x.id}">
+          <span class="tool-icon">${x.icon}</span><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></button>`).join('')}</div>
+      ${sos.tool ? toolPanel(sos.tool) : ''}
       <button class="btn primary block" data-action="sos-next">Siguiente</button>`;
   }
   if (sos.step === 3) {
@@ -472,6 +605,8 @@ function viewSOS() {
       <h1>Recuerda por qué</h1>
       <section class="card motives"><div class="eyebrow">💚 Tus motivos</div>
         <ul>${(p.motives || []).map((m) => `<li>${esc(m)}</li>`).join('')}</ul></section>
+      ${p.letter ? `<section class="card"><div class="eyebrow">💌 Tu carta</div><blockquote class="letter">${esc(p.letter)}</blockquote></section>` : ''}
+      ${isQuit() ? `<section class="card loss"><div class="eyebrow">💔 Si fumas ahora perderías</div>${lossListHTML(relapseCost(p, 1))}</section>` : ''}
       ${next ? `<section class="card next"><div class="eyebrow">Si aguantas, en ${formatDuration(next.remainingMs)}:</div>
         <div class="ms-head"><span class="ms-icon">${next.icon}</span><b>${esc(next.title)}</b></div><p class="small">${esc(next.body)}</p></section>` : ''}
       ${harmCard(h, 'Si fumas ahora')}
@@ -483,8 +618,9 @@ function viewSOS() {
       <input type="range" min="0" max="10" value="${sos.after}" data-range="after" aria-label="Intensidad ahora">
     </label>
     <button class="btn primary block" data-action="sos-win">💪 Lo he superado</button>
-    <button class="btn block" data-action="sos-again">Necesito surfear otra vez</button>
-    <button class="btn ghost block" data-action="sos-lost">He fumado</button>`;
+    <button class="btn block" data-action="sos-goto" data-step="2">Necesito otra estrategia</button>
+    <button class="btn block" data-action="sos-goto" data-step="1">Volver a surfear la ola</button>
+    <button class="btn smoked block" data-action="sos-lost">🚬 He fumado</button>`;
 }
 
 function startSurf() {
@@ -494,7 +630,7 @@ function startSurf() {
     const el = document.getElementById('surf-timer');
     if (!el) return stopSOS();
     const left = Math.max(0, SURF_SECONDS - Math.floor((now() - sos.start) / 1000));
-    el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    el.textContent = fmtClock(left);
     const idx = Math.min(URGE_SURF_SCRIPT.length - 1, Math.floor(((SURF_SECONDS - left) / SURF_SECONDS) * URGE_SURF_SCRIPT.length));
     const txt = document.getElementById('surf-text');
     if (txt && txt.dataset.idx !== String(idx)) { txt.dataset.idx = idx; txt.textContent = URGE_SURF_SCRIPT[idx]; }
@@ -520,18 +656,78 @@ function startSurf() {
   sos.breath = setTimeout(loop, 4000);
 }
 
+/** Temporizador genérico de herramienta (ejercicio, retraso). */
+function runToolTimer(seconds, elId, onTick, onEnd) {
+  stopTool();
+  const start = now();
+  const step = () => {
+    const el = document.getElementById(elId);
+    if (!el) return stopTool();
+    const elapsed = Math.floor((now() - start) / 1000);
+    const left = Math.max(0, seconds - elapsed);
+    el.textContent = fmtClock(left);
+    onTick?.(elapsed);
+    if (left === 0) { stopTool(); el.textContent = '¡Hecho!'; if (navigator.vibrate) navigator.vibrate(200); onEnd?.(); }
+  };
+  step();
+  sos.toolTimer = setInterval(step, 1000);
+}
+
+// Juego de memoria visual (3×3).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function memRound() {
+  const g = sos.game;
+  const cells = [...document.querySelectorAll('.mem-cell')];
+  const status = document.getElementById('mem-status');
+  if (!cells.length) return;
+  g.busy = true; g.input = 0;
+  g.seq = Array.from({ length: g.level + 2 }, () => Math.floor(Math.random() * 9));
+  status.textContent = `Nivel ${g.level}: mira…`;
+  await sleep(500);
+  for (const i of g.seq) {
+    if (!document.querySelector('.mem-cell')) return;
+    cells[i].classList.add('lit'); await sleep(550);
+    cells[i].classList.remove('lit'); await sleep(250);
+  }
+  g.busy = false;
+  status.textContent = `Nivel ${g.level}: ¡tu turno!`;
+}
+
+async function memTap(i, el) {
+  const g = sos.game;
+  if (g.busy || !g.seq.length) return;
+  const ok = g.seq[g.input] === i;
+  el.classList.add(ok ? 'ok' : 'bad');
+  setTimeout(() => el.classList.remove('ok', 'bad'), 250);
+  const status = document.getElementById('mem-status');
+  if (!ok) {
+    g.busy = true; status.textContent = 'Casi. Repetimos el nivel';
+    await sleep(900); memRound(); return;
+  }
+  g.input++;
+  if (g.input === g.seq.length) {
+    g.busy = true; g.level++; status.textContent = `¡Bien! Nivel ${g.level}`;
+    await sleep(800); memRound();
+  }
+}
+
 function logCraving(resisted) {
-  state.logs.push({ id: store.uid(), type: 'craving', at: new Date().toISOString(), intensity: sos.intensity, intensityAfter: sos.after, trigger: sos.trigger || null, resisted });
+  state.logs.push({
+    id: store.uid(), type: 'craving', at: new Date().toISOString(), intensity: sos.intensity, intensityAfter: sos.after,
+    trigger: sos.trigger || null, resisted, strategies: [...sos.used],
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Desliz
+// Recaída: registrar que se ha fumado, recalcular y avisar de lo perdido
 // ---------------------------------------------------------------------------
 function viewLapse() {
   const p = state.profile;
+  if (!isQuit()) return viewLogCigarette();
   return `
-    <h1>Un desliz no es una recaída</h1>
-    <p class="lead">Fumar un cigarrillo no borra lo que has conseguido. Lo que convierte un desliz en recaída es pensar "ya lo he estropeado, total…". No te castigues: aprende de lo que ha pasado y vuelve a cero ahora mismo.</p>
+    <h1>🚬 He fumado</h1>
+    <p class="lead">Sé honesto/a contigo. Al registrarlo, <b>tus contadores vuelven a cero</b>: la racha, los cambios de tu cuerpo, el ahorro y los cigarrillos evitados.</p>
+    <section class="card loss"><div class="eyebrow">💔 Esto es lo que vas a perder</div>${lossListHTML(relapseCost(p, 1))}</section>
     <form data-form="lapse" class="stack">
       <label class="field">¿Cuántos cigarrillos?
         <input name="count" inputmode="numeric" value="1">
@@ -543,32 +739,33 @@ function viewLapse() {
       <label class="field">¿Qué harás diferente la próxima vez?
         <textarea name="note" rows="3" placeholder="p. ej. No iré a esa cena sin mi plan, o llamaré a ${esc(p.supportPerson || 'alguien')} antes"></textarea>
       </label>
-      <div class="choice">
-        <label class="opt"><input type="radio" name="decision" value="continue" checked>
-          <span><b>Ha sido un desliz: sigo con mi fecha</b><br><span class="muted small">Recomendado si ha sido algo puntual.</span></span></label>
-        <label class="opt"><input type="radio" name="decision" value="restart">
-          <span><b>He vuelto a fumar: reinicio el contador ahora</b><br><span class="muted small">Tus registros y aprendizajes se conservan.</span></span></label>
-      </div>
-      <button class="btn primary block" type="submit">Guardar y volver a cero</button>
+      <button class="btn smoked block" type="submit">Registrar y volver a empezar</button>
+      <a class="btn primary block" href="#/sos">Aún no he fumado: ayúdame (SOS)</a>
     </form>`;
 }
 
 function saveLapse(form) {
   const fd = new FormData(form);
+  const p = state.profile;
   const count = Math.max(1, Math.round(num(fd.get('count')) || 1));
   const trigger = fd.get('trigger') || null;
   const note = String(fd.get('note') || '').trim();
-  state.logs.push({ id: store.uid(), type: 'lapse', at: new Date().toISOString(), count, trigger, note });
-  if (fd.get('decision') === 'restart') {
-    state.resets.push({ at: new Date().toISOString(), previousQuitAt: state.profile.quitAt });
-    state.profile.quitAt = new Date().toISOString();
-    state.notified = [];
-  }
+  const at = new Date();
+  const cost = relapseCost(p, count, at.getTime());
+  state.logs.push({ id: store.uid(), type: 'lapse', at: at.toISOString(), count, trigger, note, lostMs: cost.streakMs });
+  state.resets.push({ at: at.toISOString(), previousQuitAt: p.quitAt });
+  p.quitAt = at.toISOString();
+  state.notified = [];
+  const best = bestStreakMs(state.resets, p.quitAt, at.getTime());
   location.hash = '#/';
   commit();
-  showModal(`<div class="hero-icon">🌱</div><h2>Ni una calada más</h2>
-    <p>Has hecho lo más difícil: reconocerlo y seguir. ${note ? `Tu plan: <b>${esc(note)}</b>.` : ''}</p>
-    <p class="small muted">Recuerda: cada intento enseña algo. La mayoría de personas que lo dejan para siempre lo consiguieron tras varios intentos.</p>`);
+  showModal(`<div class="hero-icon">💔</div>
+    <h2>Este cigarrillo te ha costado caro</h2>
+    <p>${p.name ? `${esc(p.name)}, h` : 'H'}abías conseguido <b>${formatDuration(cost.streakMs, { parts: 2 })}</b> sin fumar. Todo se ha recalculado desde cero:</p>
+    ${lossListHTML(cost, { past: true })}
+    <p class="small">${esc(RELAPSE_BODY)}</p>
+    <p class="encourage">Duele, y es normal que duela. Pero no lo conviertas en dos cigarrillos: tu mejor racha es de <b>${formatDuration(best, { parts: 2 })}</b> y demuestra que puedes. ${note ? `Tu plan: <b>${esc(note)}</b>.` : ''} Tu nuevo contador empieza ahora.</p>
+    ${state.push?.copiedFp ? '<p class="small warn">🔔 Actualiza tus avisos (Ajustes) para que vuelvan a contar desde hoy.</p>' : ''}`, 'Empiezo de nuevo ahora');
 }
 
 // ---------------------------------------------------------------------------
@@ -652,16 +849,21 @@ function viewProgress() {
   const tops = topTriggers([...cravings, ...lapses, ...state.logs.filter((l) => l.type === 'cigarette')]);
   const stats = { resisted, avoided: cigarettesAvoided(p), money: moneySaved(p), life: lifeRegainedMinutes(p) };
   const recent = [...state.logs].reverse().slice(0, 25);
-  const typeLabel = { craving: '🌊 Deseo', lapse: '⚠️ Desliz', cigarette: '🚬 Cigarrillo', med: '💊 Medicación' };
+  const typeLabel = { craving: '🌊 Deseo', lapse: '🚬 Recaída', cigarette: '🚬 Cigarrillo', med: '💊 Medicación' };
+  const best = bestStreakMs(state.resets, p.quitAt);
+  const strat = strategyStats(state.logs).slice(0, 5);
   return `
     <h1>Tu progreso</h1>
-    <div class="tiles">
-      <div class="tile"><div class="tile-v">${isQuit() ? Math.floor(elapsedMs(p.quitAt) / DAY) : 0}</div><div class="tile-l">días sin fumar</div></div>
+    <div class="tiles tiles2">
+      <div class="tile"><div class="tile-v">${isQuit() ? formatDuration(elapsedMs(p.quitAt), { parts: 2 }) : '—'}</div><div class="tile-l">racha actual</div></div>
+      <div class="tile"><div class="tile-v">${best ? formatDuration(best, { parts: 2 }) : '—'}</div><div class="tile-l">mejor racha</div></div>
       <div class="tile"><div class="tile-v">${resisted}</div><div class="tile-l">deseos superados</div></div>
-      <div class="tile"><div class="tile-v">${lapses.length}</div><div class="tile-l">deslices</div></div>
+      <div class="tile"><div class="tile-v">${lapses.length}</div><div class="tile-l">recaídas</div></div>
     </div>
     ${withAfter.length ? `<section class="card"><div class="eyebrow">🌊 El SOS funciona</div>
       <p>De media, tus deseos bajaron de <b>${before.toFixed(1).replace('.', ',')}</b> a <b>${after.toFixed(1).replace('.', ',')}</b> sobre 10 tras surfearlos.</p></section>` : ''}
+    ${strat.length ? `<section class="card"><div class="eyebrow">🧰 Tus estrategias que mejor funcionan</div>
+      <ul class="plain">${strat.map((x) => { const t = SOS_TOOLS.find((y) => y.id === x.id); return t ? `<li>${t.icon} ${esc(t.title)} <span class="muted small">· usada ${x.count} ${x.count === 1 ? 'vez' : 'veces'} · el deseo bajó ${x.avgDrop.toFixed(1).replace('.', ',')} puntos de media</span></li>` : ''; }).join('')}</ul></section>` : ''}
     <section class="card">
       <div class="eyebrow">Deseos por día · últimos 14 días</div>
       ${cravings.length ? cravingsChart(data) : '<p class="muted small">Cuando uses el SOS verás aquí cómo los deseos se van espaciando.</p>'}
@@ -690,6 +892,13 @@ function viewPlan() {
     <section class="card"><div class="eyebrow">💚 Mis motivos</div>
       <ul class="editable">${(p.motives || []).map((m, i) => `<li><span>${esc(m)}</span><button class="icon-btn" data-action="del-motive" data-i="${i}" aria-label="Quitar motivo">✕</button></li>`).join('')}</ul>
       <form data-form="add-motive" class="inline-add"><input name="motive" placeholder="Añadir un motivo" required><button class="btn">Añadir</button></form>
+    </section>
+    <section class="card"><div class="eyebrow">💌 Carta para mi yo con ganas</div>
+      <form data-form="letter" class="stack">
+        <p class="small muted">Escríbela ahora, que estás decidido/a. Aparecerá en el SOS cuando tengas ganas de fumar.</p>
+        <textarea name="letter" rows="4" placeholder="Querido/a yo: sé que ahora mismo tienes ganas, pero…">${esc(p.letter || '')}</textarea>
+        <button class="btn block" type="submit">Guardar carta</button>
+      </form>
     </section>
     <section class="card"><div class="eyebrow">🧭 Mis planes "si… entonces…"</div>
       <form data-form="plans" class="stack">
@@ -778,7 +987,8 @@ function viewSettings() {
         <li><b>Hitos del cuerpo, dinero y "identidad de no fumador"</b>: técnicas de cambio de conducta usadas en Smoke Free.</li>
         <li><b>Planes "si… entonces…"</b>: intenciones de implementación.</li>
         <li><b>Perjuicios + eficacia</b>: los mensajes de miedo funcionan mejor si indican cómo evitar el daño.</li>
-        <li><b>Desliz ≠ recaída</b> y regla de "ni una calada": prevención de recaídas.</li>
+        <li><b>Caja de herramientas del SOS</b>: un juego visual de 3 minutos y unos minutos de ejercicio reducen los antojos; además retrasar, cambiar de sitio, pedir apoyo y nicotina de acción rápida.</li>
+        <li><b>Recaída</b>: se recalcula todo y se muestra lo perdido (aversión a la pérdida), con la regla de "ni una calada" para que un cigarrillo no se convierta en dos.</li>
       </ul>
       <a href="#/aprende">Ver todas las fuentes</a>
     </section>
@@ -878,8 +1088,71 @@ document.addEventListener('click', async (e) => {
       state.logs.push({ id: store.uid(), type: 'med', at: new Date().toISOString() });
       commit(); toast('💊 Anotado. Seguir el tratamiento completo reduce las recaídas.'); break;
     case 'sos-next':
-      if (sos.step === 1) stopSOS();
-      sos.step = Math.min(4, sos.step + 1); render(); break;
+      stopSOS(); sos.tool = '';
+      sos.step = Math.min(4, sos.step + 1); render(); window.scrollTo(0, 0); break;
+    case 'sos-goto':
+      stopSOS(); sos.tool = '';
+      sos.step = Number(el.dataset.step); render(); window.scrollTo(0, 0); break;
+    case 'sos-tool': {
+      const id = el.dataset.value;
+      stopTool();
+      sos.tool = sos.tool === id ? '' : id;
+      if (sos.tool) sos.used.add(id);
+      if (id === 'ground') sos.groundIdx = 0;
+      if (id === 'game') sos.game = { level: 1, seq: [], input: 0, busy: false, started: 0 };
+      render();
+      document.getElementById('tool-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      break;
+    }
+    case 'mem-start': {
+      const g = sos.game;
+      if (!g.started) {
+        g.started = now();
+        runToolTimer(24 * 3600, 'mem-time', (e) => { const t = document.getElementById('mem-time'); if (t) t.textContent = `${fmtClock(e)}${e >= 180 ? ' ✓' : ''}`; });
+      }
+      el.textContent = 'Otra secuencia';
+      memRound(); break;
+    }
+    case 'mem-tap': memTap(Number(el.dataset.i), el); break;
+    case 'move-start':
+      el.hidden = true;
+      runToolTimer(180, 'move-timer', (e) => {
+        const m = document.getElementById('move-now');
+        if (m) m.textContent = EXERCISE_MOVES[Math.floor(e / 30) % EXERCISE_MOVES.length];
+      });
+      break;
+    case 'delay-start':
+      el.hidden = true;
+      runToolTimer(600, 'delay-timer', null, () => toast('10 minutos sin fumar. ¿Cómo están ahora las ganas?'));
+      break;
+    case 'defuse-go': {
+      const v = document.getElementById('defuse-in')?.value.trim();
+      if (!v) { toast('Escribe primero lo que te dice tu mente'); break; }
+      sos.defuse = v;
+      document.getElementById('defuse-out').innerHTML = defuseHTML(v);
+      break;
+    }
+    case 'ground-next': sos.groundIdx++; render(); document.getElementById('tool-panel')?.scrollIntoView({ block: 'start' }); break;
+    case 'mouth-check': {
+      const i = Number(el.dataset.i);
+      if (sos.mouth.has(i)) sos.mouth.delete(i); else sos.mouth.add(i);
+      el.classList.toggle('on'); el.setAttribute('aria-pressed', sos.mouth.has(i));
+      break;
+    }
+    case 'letter-save': {
+      const v = document.getElementById('letter-in')?.value.trim();
+      if (!v) break;
+      state.profile.letter = v; commit(); toast('Carta guardada. La verás cada vez que la necesites.');
+      document.getElementById('tool-panel')?.scrollIntoView({ block: 'start' });
+      break;
+    }
+    case 'share-support': {
+      const text = el.dataset.msg;
+      if (navigator.share) { try { await navigator.share({ text }); } catch { /* cancelado */ } } else {
+        try { await navigator.clipboard.writeText(text); toast('Mensaje copiado: pégalo en tu chat'); } catch { toast(text); }
+      }
+      break;
+    }
     case 'sos-trigger': sos.trigger = sos.trigger === el.dataset.value ? '' : el.dataset.value; render(); break;
     case 'sos-save-plan': {
       const t = sos.trigger;
@@ -887,7 +1160,6 @@ document.addEventListener('click', async (e) => {
       if (!state.profile.triggers.includes(t)) state.profile.triggers.push(t);
       commit(); toast('Plan guardado'); break;
     }
-    case 'sos-again': sos.step = 1; render(); break;
     case 'sos-win': {
       logCraving(true);
       const total = state.logs.filter((l) => l.type === 'craving' && l.resisted).length;
@@ -993,6 +1265,11 @@ document.addEventListener('submit', (e) => {
     state.logs.push({ id: store.uid(), type: 'cigarette', at: new Date().toISOString(), trigger: fd.get('trigger') || null, mood: fd.get('mood') || null, need: Number(fd.get('need')) });
     if (state.logs.filter((l) => l.type === 'cigarette').length >= 5) state.checklist.registro = true;
     location.hash = '#/'; commit(); toast('Anotado. Conocer tus momentos es parte del plan.');
+    return;
+  }
+  if (kind === 'letter') {
+    p.letter = String(fd.get('letter') || '').trim();
+    commit(); toast('Carta guardada');
     return;
   }
   if (kind === 'add-motive') {

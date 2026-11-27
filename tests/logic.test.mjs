@@ -115,3 +115,33 @@ test('calendario ICS', () => {
 test('sin "12 meses"', () => {
   assert.equal(formatDuration(10 * 365 * DAY - 2 * DAY), '9 años 11 meses');
 });
+
+test('coste de una recaída', async () => {
+  const { relapseCost, bestStreakMs, strategyStats } = await import('../js/logic.js');
+  const p = profile();
+  const t = base.getTime() + 3 * DAY + 2 * HOUR; // 3 d 2 h sin fumar
+  const c = relapseCost(p, 2, t);
+  assert.equal(c.streakMs, 3 * DAY + 2 * HOUR);
+  assert.equal(c.lostMilestones.length, 6); // 20 min, 8 h, 12 h, 1 d, 2 d, 3 d
+  assert.equal(c.nextMilestone.id, 'w1');
+  assert.equal(c.avoided, 61);
+  assert.ok(Math.abs(c.money - 15.42) < 0.01);
+  assert.equal(c.smokedCost, 0.5);
+  assert.equal(c.lifeLost, 40);
+  // Racha mejor: un intento anterior de 10 días frente al actual de 3.
+  const resets = [{ at: new Date(base.getTime() - 5 * DAY).toISOString(), previousQuitAt: new Date(base.getTime() - 15 * DAY).toISOString() }];
+  assert.equal(bestStreakMs(resets, p.quitAt, t), 10 * DAY);
+  assert.equal(bestStreakMs([], p.quitAt, t), 3 * DAY + 2 * HOUR);
+  const stats = strategyStats([
+    { type: 'craving', intensity: 8, intensityAfter: 3, strategies: ['game', 'move'], resisted: true },
+    { type: 'craving', intensity: 6, intensityAfter: 5, strategies: ['move'], resisted: true },
+    { type: 'craving', intensity: 6, intensityAfter: 2 },
+  ]);
+  assert.deepEqual(stats.map((s) => [s.id, s.count, s.avgDrop]), [['game', 1, 5], ['move', 2, 3]]);
+});
+
+test('herramientas del SOS con fuentes válidas', async () => {
+  const { SOS_TOOLS } = await import('../js/content.js');
+  assert.ok(SOS_TOOLS.length >= 10);
+  for (const t of SOS_TOOLS) for (const s of t.src) assert.ok(SOURCES[s], s);
+});

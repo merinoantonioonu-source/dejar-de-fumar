@@ -1,6 +1,6 @@
 // Service worker: funciona sin conexión y avisa de hitos en segundo plano
 // (sincronización periódica, solo en navegadores que la soportan).
-const VERSION = 'ddf-v2';
+const VERSION = 'ddf-v3';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',
   './js/app.js', './js/content.js', './js/logic.js', './js/store.js', './js/notify.js', './js/push.js',
